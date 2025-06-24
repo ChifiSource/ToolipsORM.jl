@@ -1,6 +1,6 @@
 module ToolipsORM
 using Toolips
-import Toolips: on_start
+import Toolips: on_start, getindex, setindex!
 using Toolips.Sockets: TCPSocket
 
 abstract type AbstractCursorDriver end
@@ -15,6 +15,19 @@ struct APIDriver{T} <: AbstractCursorDriver
 end
 
 const FF = FFDriver
+
+function command_translate(driver::FFDriver, command::AbstractString)
+    pairs = Dict{String, Char}("select" => 's', "join" => 'j', 
+        "joinref" => 'b', "get" => 'c', "row" => 'w', 
+        "value" => 'v', "list" => 'l', "index" => 'g', 
+        "deleteat" => 'd', "table" => 't', "delete" => 'z', 
+        "view" => 'm', "collist" => 'x', "type" => 'n', 
+        "cmp" => 'p', "in" => 'i', "store" => 'a', "rename" => 'r')
+    if ~(command in keys(pairs))
+        throw("ORM command error")
+    end
+    pairs[command]::Char
+end
 
 mutable struct ORM{T <: AbstractCursorDriver} <: Toolips.AbstractExtension
     host::IP4
@@ -102,8 +115,10 @@ query(orm::ORM{FFDriver}, cmd::Char, args::Any ...) = begin
 end
 
 query(t::Type{String}, orm::ORM{FFDriver}, cmd::Char, args::Any ...) = begin
-    args = join((string(args) for arg in args), "|!|")
-    write!(orm.cursor.stream, "$(orm.cursor.transaction)$(cmd)$args\n")
+    args = join((string(arg) for arg in args), "|!|")
+    querstr = "$(orm.cursor.transaction)$(cmd)$args\n"
+    @warn querstr
+    write!(orm.cursor.stream, querstr)
     response::String = ""
     while true
         response = response * String(readavailable(orm.cursor.stream))
@@ -116,16 +131,28 @@ query(t::Type{String}, orm::ORM{FFDriver}, cmd::Char, args::Any ...) = begin
     if opcode == "1110"
         throw("ORM command error")
     elseif opcode == "1010"
-        throw("ORM argument error")
+        errorinfo = ""
+        if length(response) > 1
+            errorinfo = response[2:end]
+        end
+        throw("ORM argument error " * errorinfo)
     elseif opcode == "1111"
         @warn "bad transaction! reconnecting ORM"
         connect!(orm)
     end
-    if length(response) > 2
-        return(response[2:end])
+    orm.cursor.transaction = response[1]
+    @warn bitstring(response[1])
+    if length(response) > 1
+        return(response[3:end])
     else
         return("")
     end
+end
+
+query(t::Type{String}, orm::ORM{FFDriver}, str::String) = begin
+    splts = split(str, " ")
+    cmd::Char = command_translate(orm.cursor, splts[1])
+    query(t, orm, cmd, splts[2:end] ...)
 end
 
 query(t::Type{Vector}, orm::ORM{FFDriver}, cmd::Char, args::String ...) = begin
@@ -135,6 +162,7 @@ end
 query_show(t::Type{Vector}, orm::ORM{FFDriver}, cmd::Char, args::String ...) = begin
 
 end
+
 
 ORM_API = Toolips.QuickExtension{:ORMAPI}()
 
