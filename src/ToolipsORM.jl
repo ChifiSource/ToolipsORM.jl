@@ -21,7 +21,7 @@ function command_translate(driver::FFDriver, command::AbstractString)
         "joinref" => 'b', "get" => 'c', "row" => 'w', 
         "value" => 'v', "list" => 'l', "index" => 'g', 
         "deleteat" => 'd', "table" => 't', "delete" => 'z', 
-        "view" => 'm', "collist" => 'x', "type" => 'n', 
+        "view" => 'm', "settype" => 'n', 
         "cmp" => 'p', "in" => 'i', "store" => 'a', "rename" => 'r')
     if ~(command in keys(pairs))
         throw("ORM command error")
@@ -95,7 +95,7 @@ function connect!(orm::ORM{FFDriver})
             break
         end
     end
-    header = bitstring(response[1])
+    header = bitstring(UInt8(response[1]))
     opcode = header[1:4]
     if opcode == "0001"
         @info "connected"
@@ -116,34 +116,42 @@ end
 
 query(t::Type{String}, orm::ORM{FFDriver}, cmd::Char, args::Any ...) = begin
     args = join((string(arg) for arg in args), "|!|")
+    @info args
     querstr = "$(orm.cursor.transaction)$(cmd)$args\n"
     @warn querstr
     write!(orm.cursor.stream, querstr)
     response::String = ""
     while true
+        if eof(orm.cursor.stream)
+            throw("future connection error")
+        end
         response = response * String(readavailable(orm.cursor.stream))
         if length(response) > 1 && response[end] == '\n'
             break
         end
     end
-    header = bitstring(response[1])
+    header = bitstring(UInt8(response[1]))
     opcode = header[1:4]
+    @warn "OPCODE: $opcode"
     if opcode == "1110"
+        orm.cursor.transaction = response[1]
         throw("ORM command error")
     elseif opcode == "1010"
         errorinfo = ""
-        if length(response) > 1
-            errorinfo = response[2:end]
+        if length(response) > 2
+            errorinfo = response[begin + 2:end]
         end
+        orm.cursor.transaction = Char(UInt8(response[1]))
         throw("ORM argument error " * errorinfo)
     elseif opcode == "1111"
         @warn "bad transaction! reconnecting ORM"
         connect!(orm)
+        return(query(t, orm, cmd, args ...))
     end
     orm.cursor.transaction = response[1]
-    @warn bitstring(response[1])
+    @warn bitstring(UInt8(response[1]))
     if length(response) > 1
-        return(response[3:end])
+        return(replace(response[3:end], "!N" => "\n"))
     else
         return("")
     end
