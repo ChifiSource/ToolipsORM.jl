@@ -1,18 +1,22 @@
 module ToolipsORM
 using Toolips
 import Toolips: on_start
+using Toolips.Sockets: TCPSocket
 
-abstract type AbstractDataCursor end
+abstract type AbstractCursorDriver end
 
-struct FFCursor{T} <: AbstractDataCursor
+mutable struct FFDriver{T} <: AbstractCursorDriver
     stream::T
+    transaction::Char
 end
 
-struct APICursor{T} <: AbstractDataCursor
+struct APIDriver{T} <: AbstractCursorDriver
     url::String
 end
 
-mutable struct ORM{T <: AbstractDataCursor} <: Toolips.AbstractExtension
+const FF = FFDriver
+
+mutable struct ORM{T <: AbstractCursorDriver} <: Toolips.AbstractExtension
     host::IP4
     login::Pair{String, String}
     dbkey::String
@@ -20,17 +24,40 @@ mutable struct ORM{T <: AbstractDataCursor} <: Toolips.AbstractExtension
     cursor::T
 end
 
-function ORM{T}(func::Function, host::IP4, args::String ...) where {T == :ff}
-    curs = FFCursor{Nothing}(nothing)
-    ORM{FFCursor}(host, args[1] => args[2], args[3], func, curs)::ORM{FFCursor}
+function ORM(func::Function, driver::Type{FFDriver},
+        host::IP4, user::String, pwd::String, key::String)
+    curs = FFDriver{Nothing}(nothing, 'a')
+    ORM{FFDriver}(host, user => pwd, key, func, curs)::ORM{FFDriver}
 end
 
-function ORM{T}(host::IP4, args ...; keys ...) where {T == :ff}
-    func = () -> (args[1], args[2], args[3])
-    ORM{T}(func, host, args ...; keys ...)
+function ORM(host::IP4, driver::Type{FFDriver}, user::String, pwd::String, key::String; keys ...)
+    func = () -> (user, pwd, key)
+    ORM(func, driver, host, user, pwd, key; keys ...)
 end
 
-function connect!(orm::ORM{FFCursor})
+function query end
+
+query(orm::ORM{<:Any}, args::Any...) = begin
+    throw("this form of query does not work with this ORM type, or querying is not yet implemented for this type.")
+end
+
+query(t::Type{<:Any}, orm::ORM{<:Any}, args::Any...) = begin
+    throw("this form of query does not work with this ORM type, or querying is not yet implemented for this type.")
+end
+
+
+function connect! end
+
+connect!(orm::ORM{<:Any}) = throw("Not implemented")
+
+#== FF !
+==#
+function on_start(ext::ORM{FFDriver}, data::Dict{Symbol, Any}, routes::Vector{<:AbstractRoute})
+    push!(data, :ORM => ext)
+end
+
+
+function connect!(orm::ORM{FFDriver})
     if orm.login[1] == ""
         new_login = orm.get()
         if length(new_login) != 3
@@ -45,11 +72,75 @@ function connect!(orm::ORM{FFCursor})
         # TODO future ORMConnectError
         throw("future connect error")
     end
-    orm.curs = FFCursor{TCPSocket}(cursor_stream)
+    outgoing = "eS$(orm.dbkey) $(orm.login[1]) $(orm.login[2])\n"
+    @info outgoing
+    write!(cursor_stream, outgoing)
+    response::String = ""
+    while true
+        response = response * String(readavailable(cursor_stream))
+        if length(response) > 1 && response[end] == '\n'
+            break
+        end
+    end
+    header = bitstring(response[1])
+    opcode = header[1:4]
+    if opcode == "0001"
+        @info "connected"
+        #success
+    elseif opcode == "1100"
+        throw("future connect error bad login")
+    elseif opcode == "1010"
+        throw("db key error")
+    end
+    orm.cursor = FFDriver{TCPSocket}(cursor_stream, response[1])
+    nothing::Nothing
 end
 
-function make_orm_api(orm::ORM{FFCursor})
+query(orm::ORM{FFDriver}, cmd::Char, args::Any ...) = begin 
+    # TODO Parametrically assume type based on command?
+    query(String, orm, cmd, args ...)
+end
+
+query(t::Type{String}, orm::ORM{FFDriver}, cmd::Char, args::Any ...) = begin
+    args = join((string(args) for arg in args), "|!|")
+    write!(orm.cursor.stream, "$(orm.cursor.transaction)$(cmd)$args\n")
+    response::String = ""
+    while true
+        response = response * String(readavailable(orm.cursor.stream))
+        if length(response) > 1 && response[end] == '\n'
+            break
+        end
+    end
+    header = bitstring(response[1])
+    opcode = header[1:4]
+    if opcode == "1110"
+        throw("ORM command error")
+    elseif opcode == "1010"
+        throw("ORM argument error")
+    elseif opcode == "1111"
+        @warn "bad transaction! reconnecting ORM"
+        connect!(orm)
+    end
+    if length(response) > 2
+        return(response[2:end])
+    else
+        return("")
+    end
+end
+
+query(t::Type{Vector}, orm::ORM{FFDriver}, cmd::Char, args::String ...) = begin
 
 end
 
+query_show(t::Type{Vector}, orm::ORM{FFDriver}, cmd::Char, args::String ...) = begin
+
+end
+
+ORM_API = Toolips.QuickExtension{:ORMAPI}()
+
+function on_start(ext::Toolips.QuickExtension{:ORMAPI}, data::Dict{Symbol, Any}, routes::Vector{<:AbstractRoute})
+    
+end
+
+export connect, query, connect!, IP4
 end # module ToolipsORM
