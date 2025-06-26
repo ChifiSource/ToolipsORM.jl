@@ -18,11 +18,10 @@ const FF = FFDriver
 
 function command_translate(driver::FFDriver, command::AbstractString)
     pairs = Dict{String, Char}("select" => 's', "join" => 'j', 
-        "joinref" => 'b', "get" => 'c', "row" => 'w', 
+        "get" => 'c', "row" => 'w', 
         "value" => 'v', "list" => 'l', "index" => 'g', 
         "deleteat" => 'd', "table" => 't', "delete" => 'z', 
-        "view" => 'm', "settype" => 'n', 
-        "cmp" => 'p', "in" => 'i', "store" => 'a', "rename" => 'r')
+        "settype" => 'n', "cmp" => 'p', "in" => 'i', "store" => 'a', "rename" => 'r')
     if ~(command in keys(pairs))
         throw("ORM command error")
     end
@@ -112,6 +111,18 @@ end
 query(orm::ORM{FFDriver}, cmd::Char, args::Any ...) = begin 
     # TODO Parametrically assume type based on command?
     query(String, orm, cmd, args ...)
+end
+
+query(orm::ORM{FFDriver}, cmd::String, args::Any ...) = begin
+
+end
+
+query(T::Type{<:Any}, orm::ORM{FFDriver}, cmd::String, args::Any ...) = begin
+
+end
+
+query(T::Type{<:Integer}, orm::ORM{FFDriver}, cmd::String, args::Any ...) = begin
+
 end
 
 query(t::Type{String}, orm::ORM{FFDriver}, cmd::Char, args::Any ...) = begin
