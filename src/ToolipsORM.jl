@@ -118,11 +118,29 @@ query(orm::ORM{FFDriver}, cmd::String, args::Any ...) = begin
 end
 
 query(T::Type{<:Any}, orm::ORM{FFDriver}, cmd::String, args::Any ...) = begin
-
+    sel = Dict{String, Char}("select" => 's', "join" => 'j', 
+        "get" => 'c', "row" => 'w', 
+        "value" => 'v', "list" => 'l', "index" => 'g', 
+        "deleteat" => 'd', "table" => 't', "delete" => 'z', 
+        "settype" => 'n', "cmp" => 'p', "in" => 'i', "store" => 'a', "rename" => 'r')[cmd]
+    query(T, orm, sel, args ...)
 end
 
-query(T::Type{<:Integer}, orm::ORM{FFDriver}, cmd::String, args::Any ...) = begin
+query(T::Type{<:Integer}, orm::ORM{FFDriver}, cmd::Any, args::Any ...) = begin
+    res = query(String, orm, cmd, args ...)
+    parse(Int64, res)::Int64
+end
 
+query(T::Type{<:AbstractVector}, orm::ORM{FFDriver}, args::Any ...) = begin
+    res = query(String, orm, args ...)
+    this_T = T.parameters[1]
+    [begin
+        if this_T <: Number
+            parse(this_T, spl)
+        else
+            this_T(spl)
+        end
+    end for spl in split(res, "!;")]::Vector{this_T}
 end
 
 query(t::Type{String}, orm::ORM{FFDriver}, cmd::Char, args::Any ...) = begin
