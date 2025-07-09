@@ -15,13 +15,13 @@ struct APIDriver{T} <: AbstractCursorDriver
 end
 
 function is_numerical(str::AbstractString)
-    nums = ('0', '1', '2', '3' , '4', '5', '6', '7', '8', '9', '10')
+    nums = ('0', '1', '2', '3' , '4', '5', '6', '7', '8', '9')
     f = findfirst(x -> ~(x in nums), str)
     isnothing(f)
 end
 
 function is_numerical_float(str::AbstractString)
-    nums = ('0', '1', '2', '3' , '4', '5', '6', '7', '8', '9', '10', '.')
+    nums = ('0', '1', '2', '3' , '4', '5', '6', '7', '8', '9', '.')
     f = findfirst(x -> ~(x in nums), str)
     if isnothing(f) && length(findall(".", str)) == 1
         true
@@ -29,23 +29,6 @@ function is_numerical_float(str::AbstractString)
         false
     end
 end
-
-function command_translate(driver::FFDriver, command::AbstractString)
-    pairs = Dict{String, Char}("select" => 's', "join" => 'j', 
-        "get" => 'c', "row" => 'w', 
-        "value" => 'v', "list" => 'l', "index" => 'g', 
-        "deleteat" => 'd', "table" => 't', "delete" => 'z', 
-        "settype" => 'n', "cmp" => 'p', "in" => 'i', "store" => 'a', "rename" => 'r')
-    if ~(command in keys(pairs))
-        throw("ORM command error")
-    end
-    pairs[command]::Char
-end
-
-make_argstring(orm::ORM{<:Any}, val::Any) = string(val)::String
-
-make_argstring(orm::ORM{<:Any}, val::AbstractVector) = join((string(v) for v in val), "!;")::String
-
 
 mutable struct ORM{T <: AbstractCursorDriver} <: Toolips.AbstractExtension
     host::IP4
@@ -80,9 +63,15 @@ function on_start(ext::ORM{<:Any}, data::Dict{Symbol, Any}, routes::Vector{<:Abs
     push!(data, :ORM => ext)
 end
 
+make_argstring(orm::ORM{<:Any}, val::Any) = string(val)::String
+
+make_argstring(orm::ORM{<:Any}, val::AbstractVector) = join((string(v) for v in val), "!;")::String
+
+include("featurefile.jl")
 function connect! end
 
 connect!(orm::ORM{<:Any}) = throw("Not implemented")
 
+include("autoapi.jl")
 export connect, query, connect!, IP4
 end # module ToolipsORM

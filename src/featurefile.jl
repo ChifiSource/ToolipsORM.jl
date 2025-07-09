@@ -1,3 +1,16 @@
+function command_translate(driver::FFDriver, command::AbstractString)
+    pairs = Dict{String, Char}("userlist" => 'U', "newuser" => 'C', 
+        "setuser" => 'K', "logout" => 'L', "rmuser" => 'D', "list" => 'l', 
+        "select" => 's', "create" => 't', "get" => 'g', "getrow" => 'r', 
+        "index" => 'i', "store" => 'a', "set" => 'v', "setrow" => 'w', 
+        "join" => 'j', "type" => 'k', "rename" => 'e', "deleteat" => 'd', 
+        "delete" => 'z', "compare" => 'p', "in" => 'n')
+    if ~(command in keys(pairs))
+        throw("ORM command error")
+    end
+    pairs[command]::Char
+end
+
 function connect!(orm::ORM{FFDriver})
     if orm.login[1] == ""
         new_login = orm.get()
@@ -56,7 +69,7 @@ query(orm::ORM{FFDriver}, cmd::Char, args::Any ...) = begin
 end
 
 query(orm::ORM{FFDriver}, cmd::String, args::Any ...) = begin
-
+    query(orm, command_translate(orm.cursor, cmd), args ...)
 end
 
 query(t::Type{String}, orm::ORM{FFDriver}, cmd::Char, args::Any ...) = begin
