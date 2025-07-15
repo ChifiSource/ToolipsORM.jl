@@ -1,3 +1,7 @@
+make_argstring(orm::ORM{<:Any}, val::Any) = string(val)::String
+
+make_argstring(orm::ORM{<:Any}, val::AbstractVector) = join((string(v) for v in val), "!;")::String
+
 function command_translate(driver::FFDriver, command::AbstractString)
     pairs = Dict{String, Char}("userlist" => 'U', "newuser" => 'C', 
         "setuser" => 'K', "logout" => 'L', "rmuser" => 'D', "list" => 'l', 
@@ -136,4 +140,16 @@ query(T::Type{<:AbstractVector}, orm::ORM{FFDriver}, args::Any ...) = begin
             this_T(spl)
         end
     end for spl in split(res, "!;")]::Vector{this_T}
+end
+
+getindex(orm::ORM{FFDriver}, axis::String, r::UnitRange{Int64} = 0:1) = begin
+    if r == 0:1
+        query(Vector{String}, orm, 'g', axis)
+    else
+        query(Vector{String}, orm, 'g', axis, r)
+    end
+end
+
+push!(orm::ORM{FFDriver}, table::String, vals::Any ...) = begin
+    query(String, ORM, table, make_argstring([vals ...]))
 end

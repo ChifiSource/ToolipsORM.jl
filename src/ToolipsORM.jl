@@ -63,10 +63,6 @@ function on_start(ext::ORM{<:Any}, data::Dict{Symbol, Any}, routes::Vector{<:Abs
     push!(data, :ORM => ext)
 end
 
-make_argstring(orm::ORM{<:Any}, val::Any) = string(val)::String
-
-make_argstring(orm::ORM{<:Any}, val::AbstractVector) = join((string(v) for v in val), "!;")::String
-
 include("featurefile.jl")
 function connect! end
 
