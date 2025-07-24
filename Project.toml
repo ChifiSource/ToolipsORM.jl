@@ -2,3 +2,9 @@ name = "ToolipsORM"
 uuid = "fcf8aea4-1100-4bef-888c-04b770b32294"
 authors = ["emmac <emmaccode@gmail.com>"]
 version = "0.1.0"
+
+[deps]
+Toolips = "a47e2ad8-fcf7-417c-9746-32b9bdf220bd"
+
+[compat]
+Toolips = "0.3.13"
