@@ -1,21 +1,37 @@
+mutable struct ChiDBDriver{T} <: AbstractCursorDriver
+    stream::T
+    transaction::Char
+end
+
+function ORM(func::Function, driver::Type{ChiDBDriver},
+        host::IP4, user::String, pwd::String, key::String)
+    curs = ChiDBDriver{Nothing}(nothing, 'a')
+    ORM{ChiDBDriver}(host, user => pwd, key, func, curs)::ORM{ChiDBDriver}
+end
+
+function ORM(driver::Type{ChiDBDriver}, host::IP4, user::String, pwd::String, key::String; keys ...)
+    func = () -> (user, pwd, key)
+    ORM(func, driver, host, user, pwd, key; keys ...)
+end
+
 make_argstring(orm::ORM{<:Any}, val::Any) = string(val)::String
 
 make_argstring(orm::ORM{<:Any}, val::AbstractVector) = join((string(v) for v in val), "!;")::String
 
-function command_translate(driver::FFDriver, command::AbstractString)
+function command_translate(driver::ChiDBDriver, command::AbstractString)
     pairs = Dict{String, Char}("userlist" => 'U', "newuser" => 'C', 
         "setuser" => 'K', "logout" => 'L', "rmuser" => 'D', "list" => 'l', 
         "select" => 's', "create" => 't', "get" => 'g', "getrow" => 'r', 
         "index" => 'i', "store" => 'a', "set" => 'v', "setrow" => 'w', 
         "join" => 'j', "type" => 'k', "rename" => 'e', "deleteat" => 'd', 
-        "delete" => 'z', "compare" => 'p', "in" => 'n')
+        "delete" => 'z', "compare" => 'p', "in" => 'n', "columns" => 'o')
     if ~(command in keys(pairs))
         throw("ORM command error")
     end
     pairs[command]::Char
 end
 
-function connect!(orm::ORM{FFDriver})
+function connect!(orm::ORM{ChiDBDriver})
     if orm.login[1] == ""
         new_login = orm.get()
         if length(new_login) != 3
@@ -50,13 +66,14 @@ function connect!(orm::ORM{FFDriver})
     elseif opcode == "1010"
         throw("db key error")
     end
-    orm.cursor = FFDriver{TCPSocket}(cursor_stream, response[1])
+    orm.cursor = ChiDBDriver{TCPSocket}(cursor_stream, response[1])
     nothing::Nothing
 end
 
 
-query(orm::ORM{FFDriver}, cmd::Char, args::Any ...) = begin 
+query(orm::ORM{ChiDBDriver}, cmd::Char, args::Any ...) = begin 
     ret = query(String, orm, cmd, args ...)
+    ret = replace(ret, "\n" => "")
     has_array = contains(ret, "!;")
     if contains(ret, "!;")
         if contains(ret, "!N")
@@ -72,11 +89,15 @@ query(orm::ORM{FFDriver}, cmd::Char, args::Any ...) = begin
     return(ret)
 end
 
-query(orm::ORM{FFDriver}, cmd::String, args::Any ...) = begin
+query(orm::ORM{ChiDBDriver}, cmd::String, args::Any ...) = begin
     query(orm, command_translate(orm.cursor, cmd), args ...)
 end
 
-query(t::Type{String}, orm::ORM{FFDriver}, cmd::Char, args::Any ...) = begin
+query(t::Type{<:Any}, orm::ORM{ChiDBDriver}, cmd::String, args::Any ...) = begin
+    query(t, orm, command_translate(orm.cursor, cmd), args ...)
+end
+
+query(t::Type{String}, orm::ORM{ChiDBDriver}, cmd::Char, args::Any ...) = begin
     args = join((make_argstring(orm, arg) for arg in args), "|!|")
     @info args
     querstr = "$(orm.cursor.transaction)$(cmd)$args\n"
@@ -119,17 +140,14 @@ query(t::Type{String}, orm::ORM{FFDriver}, cmd::Char, args::Any ...) = begin
     end
 end
 
-query(T::Type{<:Any}, orm::ORM{FFDriver}, cmd::String, args::Any ...) = begin
-    sel = command_translate(orm.cursor, cmd)
-    query(T, orm, sel, args ...)
-end
-
-query(T::Type{<:Number}, orm::ORM{FFDriver}, cmd::Any, args::Any ...) = begin
+query(T::Type{<:Number}, orm::ORM{ChiDBDriver}, cmd::String, args::Any ...) = begin
+    cmd = command_translate(orm.cursor, cmd)
     res = query(String, orm, cmd, args ...)
-    parse(T, res)::Int64
+    res = replace(res, "\n" => "")
+    parse(T, res)::T
 end
 
-query(T::Type{<:AbstractVector}, orm::ORM{FFDriver}, args::Any ...) = begin
+query(T::Type{<:AbstractVector}, orm::ORM{ChiDBDriver}, args::Any ...) = begin
     res = query(String, orm, args ...)
     this_T = T.parameters[1] <: Number
     is_num = 
@@ -142,7 +160,7 @@ query(T::Type{<:AbstractVector}, orm::ORM{FFDriver}, args::Any ...) = begin
     end for spl in split(res, "!;")]::Vector{this_T}
 end
 
-getindex(orm::ORM{FFDriver}, axis::String, r::UnitRange{Int64} = 0:1) = begin
+getindex(orm::ORM{ChiDBDriver}, axis::String, r::UnitRange{Int64} = 0:1) = begin
     if r == 0:1
         query(Vector{String}, orm, 'g', axis)
     else
@@ -150,6 +168,6 @@ getindex(orm::ORM{FFDriver}, axis::String, r::UnitRange{Int64} = 0:1) = begin
     end
 end
 
-push!(orm::ORM{FFDriver}, table::String, vals::Any ...) = begin
+push!(orm::ORM{ChiDBDriver}, table::String, vals::Any ...) = begin
     query(String, ORM, table, make_argstring([vals ...]))
 end

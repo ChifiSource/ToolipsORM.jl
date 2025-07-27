@@ -5,11 +5,6 @@ using Toolips.Sockets: TCPSocket
 
 abstract type AbstractCursorDriver end
 
-mutable struct FFDriver{T} <: AbstractCursorDriver
-    stream::T
-    transaction::Char
-end
-
 struct APIDriver{T} <: AbstractCursorDriver
     url::String
 end
@@ -38,17 +33,6 @@ mutable struct ORM{T <: AbstractCursorDriver} <: Toolips.AbstractExtension
     cursor::T
 end
 
-function ORM(func::Function, driver::Type{FFDriver},
-        host::IP4, user::String, pwd::String, key::String)
-    curs = FFDriver{Nothing}(nothing, 'a')
-    ORM{FFDriver}(host, user => pwd, key, func, curs)::ORM{FFDriver}
-end
-
-function ORM(host::IP4, driver::Type{FFDriver}, user::String, pwd::String, key::String; keys ...)
-    func = () -> (user, pwd, key)
-    ORM(func, driver, host, user, pwd, key; keys ...)
-end
-
 function query end
 
 query(orm::ORM{<:Any}, args::Any...) = begin
@@ -60,10 +44,14 @@ query(t::Type{<:Any}, orm::ORM{<:Any}, args::Any...) = begin
 end
 
 function on_start(ext::ORM{<:Any}, data::Dict{Symbol, Any}, routes::Vector{<:AbstractRoute})
+    if isnothing(ext.driver.stream) || eof(ext.driver.stream)
+        connect!(ext)
+    end
     push!(data, :ORM => ext)
 end
 
 include("featurefile.jl")
+
 function connect! end
 
 connect!(orm::ORM{<:Any}) = throw("Not implemented")
